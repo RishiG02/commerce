@@ -22,10 +22,10 @@ app.use(cors({
 
 // PostgreSQL connection pool
 const pool = new Pool({
-  user: process.env.DB_USER || 'sanskar',
+  user: process.env.DB_USER || 'vidya',
   host: process.env.DB_HOST || 'localhost',
   database: process.env.DB_NAME || 'quick_commerce',
-  password: process.env.DB_PASSWORD || 'hatebitches1',
+  password: process.env.DB_PASSWORD || 'commerceproject',
   port: process.env.DB_PORT || 5432,
 });
 
@@ -73,6 +73,13 @@ app.get('/api/isLoggedIn', (req, res) => {
   }
 });
 
+app.use((req, res, next) => {
+  res.header('Access-Control-Allow-Origin', 'http://localhost:3000');
+  res.header('Access-Control-Allow-Credentials', 'true');
+  res.header('Access-Control-Allow-Headers', 'Origin, X-Requested-With, Content-Type, Accept');
+  next();
+});
+
 // User registration endpoint
 app.post('/api/register', async (req, res) => {
   try {
@@ -100,6 +107,25 @@ app.post('/api/register', async (req, res) => {
   } catch (error) {
     console.error('Registration error:', error);
     res.status(500).json({ message: 'Server error during registration' });
+  }
+});
+
+
+// Get all products
+app.get('/api/products', async (req, res) => {
+  try {
+    const products = await pool.query(`
+      SELECT p.*, 
+        COALESCE(ROUND(AVG(r.rating), 1), 0) as average_rating,
+        COUNT(r.review_id) as review_count
+      FROM products p
+      LEFT JOIN reviews r ON p.product_id = r.product_id
+      GROUP BY p.product_id
+    `);
+    res.json(products.rows);
+  } catch (error) {
+    console.error('Products fetch error:', error);
+    res.status(500).json({ message: 'Server error fetching products' });
   }
 });
 
@@ -162,7 +188,7 @@ app.post('/api/logout', (req, res) => {
 app.get('/api/profile', authenticateToken, async (req, res) => {
   try {
     const users = await pool.query(
-      'SELECT user_id, name, email, phone, created_at FROM users WHERE user_id = $1',
+      'SELECT user_id, name, email, phone, created_at, is_admin AS "isAdmin" FROM users WHERE user_id = $1',
       [req.user.userId]
     );
     
@@ -230,10 +256,15 @@ app.get('/api/categories', async (req, res) => {
 app.get('/api/products/category/:categoryId', async (req, res) => {
   try {
     const categoryId = req.params.categoryId;
-    const products = await pool.query(
-      'SELECT * FROM products WHERE category_id = $1',
-      [categoryId]
-    );
+    const products = await pool.query(`
+      SELECT p.*, 
+        COALESCE(ROUND(AVG(r.rating), 1), 0) as average_rating,
+        COUNT(r.review_id) as review_count
+      FROM products p
+      LEFT JOIN reviews r ON p.product_id = r.product_id
+      WHERE p.category_id = $1
+      GROUP BY p.product_id
+    `, [categoryId]);
     res.json(products.rows);
   } catch (error) {
     console.error('Products fetch error:', error);
@@ -244,7 +275,15 @@ app.get('/api/products/category/:categoryId', async (req, res) => {
 // Get featured products
 app.get('/api/products/featured', async (req, res) => {
   try {
-    const products = await pool.query('SELECT * FROM products WHERE is_featured = TRUE');
+    const products = await pool.query(`
+      SELECT p.*, 
+        COALESCE(ROUND(AVG(r.rating), 1), 0) as average_rating,
+        COUNT(r.review_id) as review_count
+      FROM products p
+      LEFT JOIN reviews r ON p.product_id = r.product_id
+      WHERE p.is_featured = TRUE
+      GROUP BY p.product_id
+    `);
     res.json(products.rows);
   } catch (error) {
     console.error('Featured products fetch error:', error);
@@ -256,10 +295,15 @@ app.get('/api/products/featured', async (req, res) => {
 app.get('/api/products/search', async (req, res) => {
   try {
     const searchTerm = `%${req.query.q}%`;
-    const products = await pool.query(
-      'SELECT * FROM products WHERE name LIKE $1 OR description LIKE $2',
-      [searchTerm, searchTerm]
-    );
+    const products = await pool.query(`
+      SELECT p.*, 
+        COALESCE(ROUND(AVG(r.rating), 1), 0) as average_rating,
+        COUNT(r.review_id) as review_count
+      FROM products p
+      LEFT JOIN reviews r ON p.product_id = r.product_id
+      WHERE p.name ILIKE $1 OR p.description ILIKE $2
+      GROUP BY p.product_id
+    `, [searchTerm, searchTerm]);
     res.json(products.rows);
   } catch (error) {
     console.error('Product search error:', error);
@@ -432,6 +476,183 @@ app.delete('/api/cart/items/:itemId', authenticateToken, async (req, res) => {
 
 // Place an order
 // Place an order
+// Add review routes
+app.post('/api/products/:productId/reviews', authenticateToken, async (req, res) => {
+  try {
+      const productId = req.params.productId;
+      const { rating, comment } = req.body;
+
+      // Validate rating
+      if (rating < 1 || rating > 5) {
+          return res.status(400).json({ message: 'Rating must be between 1 and 5' });
+      }
+
+      // Check if user already reviewed this product
+      const existingReview = await pool.query(
+          'SELECT * FROM reviews WHERE product_id = $1 AND user_id = $2',
+          [productId, req.user.userId]
+      );
+
+      if (existingReview.rows.length > 0) {
+          return res.status(400).json({ message: 'You have already reviewed this product' });
+      }
+
+      // Create new review
+      const result = await pool.query(
+          'INSERT INTO reviews (product_id, user_id, rating, comment) VALUES ($1, $2, $3, $4) RETURNING *',
+          [productId, req.user.userId, rating, comment]
+      );
+
+      res.status(201).json(result.rows[0]);
+  } catch (error) {
+      console.error('Review creation error:', error);
+      res.status(500).json({ message: 'Server error creating review' });
+  }
+});
+
+// Get product reviews
+app.get('/api/products/:productId/reviews', async (req, res) => {
+  try {
+      const productId = req.params.productId;
+      
+      const reviews = await pool.query(`
+          SELECT r.*, u.name as user_name 
+          FROM reviews r
+          JOIN users u ON r.user_id = u.user_id
+          WHERE product_id = $1
+          ORDER BY created_at DESC
+      `, [productId]);
+
+      // Get helpful counts
+      for (let review of reviews.rows) {
+          const helpfulCount = await pool.query(
+              'SELECT COUNT(*) FROM review_helpful WHERE review_id = $1',
+              [review.review_id]
+          );
+          review.helpful_count = parseInt(helpfulCount.rows[0].count);
+      }
+
+      res.json(reviews.rows);
+  } catch (error) {
+      console.error('Error fetching reviews:', error);
+      res.status(500).json({ message: 'Server error fetching reviews' });
+  }
+});
+
+// Mark review as helpful
+app.post('/api/reviews/:reviewId/helpful', authenticateToken, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const reviewId = req.params.reviewId;
+    const userId = req.user.userId;
+
+    // Validate review exists
+    const reviewCheck = await client.query(
+      'SELECT 1 FROM reviews WHERE review_id = $1',
+      [reviewId]
+    );
+    
+    if (reviewCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ 
+        success: false,
+        message: 'Review not found'
+      });
+    }
+
+    // Check existing helpful mark
+    const existing = await client.query(
+      'SELECT 1 FROM review_helpful WHERE review_id = $1 AND user_id = $2',
+      [reviewId, userId]
+    );
+
+    // Toggle helpful status
+    if (existing.rows.length > 0) {
+      await client.query(
+        'DELETE FROM review_helpful WHERE review_id = $1 AND user_id = $2',
+        [reviewId, userId]
+      );
+    } else {
+      await client.query(
+        'INSERT INTO review_helpful (review_id, user_id) VALUES ($1, $2)',
+        [reviewId, userId]
+      );
+    }
+
+    // Get updated count
+    const countResult = await client.query(
+      'SELECT COUNT(*) FROM review_helpful WHERE review_id = $1',
+      [reviewId]
+    );
+
+    await client.query('COMMIT');
+
+    res.json({
+      success: true,
+      helpfulCount: parseInt(countResult.rows[0].count, 10),
+      hasMarked: !existing.rows.length > 0
+    });
+
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Helpful vote error:', error);
+    res.status(500).json({
+      success: false,
+      message: process.env.NODE_ENV === 'development' 
+        ? `Server error: ${error.message}`
+        : 'Unable to process helpful vote'
+    });
+  } finally {
+    client.release();
+  }
+});
+
+// Update product routes to include average rating
+app.get('/api/products/category/:categoryId', async (req, res) => {
+  try {
+      const categoryId = req.params.categoryId;
+      const products = await pool.query(`
+          SELECT p.*, 
+                 COALESCE(ROUND(AVG(r.rating)::numeric, 0) as average_rating,
+                 COUNT(r.review_id) as review_count
+          FROM products p
+          LEFT JOIN reviews r ON p.product_id = r.product_id
+          WHERE p.category_id = $1
+          GROUP BY p.product_id
+      `, [categoryId]);
+      res.json(products.rows);
+  } catch (error) {
+      console.error('Products fetch error:', error);
+      res.status(500).json({ message: 'Server error fetching products' });
+  }
+});
+
+app.get('/api/products/:productId', async (req, res) => {
+  try {
+      const productId = req.params.productId;
+      
+      const productResult = await pool.query(`
+          SELECT p.*, 
+                 COALESCE(ROUND(AVG(r.rating)::numeric, 1), 0) as average_rating,
+                 COUNT(r.review_id) as review_count
+          FROM products p
+          LEFT JOIN reviews r ON p.product_id = r.product_id
+          WHERE p.product_id = $1
+          GROUP BY p.product_id
+      `, [productId]);
+
+      if (productResult.rows.length === 0) {
+          return res.status(404).json({ message: 'Product not found' });
+      }
+
+      const product = productResult.rows[0];
+      res.json(product);
+  } catch (error) {
+      console.error('Product fetch error:', error);
+      res.status(500).json({ message: 'Server error fetching product' });
+  }
+});
 app.post('/api/orders', authenticateToken, async (req, res) => {
   try {
     const { addressId, paymentMethod } = req.body;
@@ -780,61 +1001,155 @@ app.get('/api/orders/:orderId/tracking', authenticateToken, async (req, res) => 
 // Admin: Get all users
 app.get('/api/admin/users', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const users = await pool.query(
-      'SELECT user_id, name, email, phone, created_at, is_admin FROM users'
-    );
+    const users = await pool.query(`
+      SELECT user_id, name, email, phone, created_at, is_admin 
+      FROM users
+    `);
     res.json(users.rows);
   } catch (error) {
     console.error('Admin users fetch error:', error);
     res.status(500).json({ message: 'Server error fetching users' });
   }
 });
+app.get('/api/admin/products', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const products = await pool.query(`
+      SELECT * FROM products
+    `);
+    res.json(products.rows);
+  } catch (error) {
+    console.error('Admin products fetch error:', error);
+    res.status(500).json({ message: 'Server error fetching products' });
+  }
+});
 
 // Admin: Add new product
+// Update the admin products post route
 app.post('/api/admin/products', authenticateToken, isAdmin, async (req, res) => {
   try {
     const {
-      name, description, price, discountPrice, categoryId,
-      imageUrl, stockQuantity, unit, isFeatured
+      name, 
+      description, 
+      price, 
+      discount_price,  // Changed from discountPrice
+      category_id,     // Changed from categoryId
+      image_url,       // Changed from imageUrl
+      stock_quantity,  // Changed from stockQuantity
+      unit, 
+      is_featured      // Changed from isFeatured
     } = req.body;
-    
+
+    // Validation
+    if (!name || !description || !category_id) {
+      return res.status(400).json({ 
+        message: 'Missing required fields: name, description, or category' 
+      });
+    }
+
+    if (isNaN(price) || price <= 0) {
+      return res.status(400).json({ 
+        message: 'Invalid price value' 
+      });
+    }
+
     const result = await pool.query(
-      `INSERT INTO products (name, description, price, discount_price, category_id,
-       image_url, stock_quantity, unit, is_featured)
-       VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) RETURNING product_id`,
-      [name, description, price, discountPrice, categoryId, imageUrl, stockQuantity, unit, isFeatured]
+      `INSERT INTO products (
+        name, description, price, discount_price, 
+        category_id, image_url, stock_quantity, 
+        unit, is_featured
+       ) VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9) 
+       RETURNING product_id`,
+      [
+        name,
+        description,
+        parseFloat(price),
+        parseFloat(discount_price) || 0,
+        parseInt(category_id),
+        image_url,
+        parseInt(stock_quantity) || 0,
+        unit,
+        Boolean(is_featured)
+      ]
     );
-    
+
     res.status(201).json({
       message: 'Product added successfully',
       productId: result.rows[0].product_id
     });
   } catch (error) {
     console.error('Product creation error:', error);
-    res.status(500).json({ message: 'Server error adding product' });
+    
+    // Enhanced error response
+    const errorResponse = {
+      message: 'Failed to add product',
+      details: process.env.NODE_ENV === 'development' ? {
+        error: error.message,
+        constraint: error.constraint,
+        code: error.code
+      } : undefined
+    };
+
+    // Handle common database errors
+    if (error.code === '23503') { // Foreign key violation
+      errorResponse.message = 'Invalid category selected';
+    } else if (error.code === '23505') { // Unique violation
+      errorResponse.message = 'Product name already exists';
+    }
+
+    res.status(500).json(errorResponse);
   }
 });
 
 // Admin: Update product
+// Update product route
 app.put('/api/admin/products/:productId', authenticateToken, isAdmin, async (req, res) => {
   try {
     const { productId } = req.params;
     const {
-      name, description, price, discountPrice, categoryId,
-      imageUrl, stockQuantity, unit, isFeatured
+      name,
+      description,
+      price,
+      discount_price,  // Changed from discountPrice
+      category_id,     // Changed from categoryId
+      image_url,       // Changed from imageUrl
+      stock_quantity,  // Changed from stockQuantity
+      unit,
+      is_featured      // Changed from isFeatured
     } = req.body;
-    
+
     await pool.query(
-      `UPDATE products SET name = $1, description = $2, price = $3, discount_price = $4,
-       category_id = $5, image_url = $6, stock_quantity = $7, unit = $8, is_featured = $9
+      `UPDATE products SET 
+        name = $1, 
+        description = $2, 
+        price = $3, 
+        discount_price = $4,
+        category_id = $5, 
+        image_url = $6, 
+        stock_quantity = $7, 
+        unit = $8, 
+        is_featured = $9
        WHERE product_id = $10`,
-      [name, description, price, discountPrice, categoryId, imageUrl, stockQuantity, unit, isFeatured, productId]
+      [
+        name,
+        description,
+        price,
+        discount_price,
+        category_id,
+        image_url,
+        stock_quantity,
+        unit,
+        is_featured,
+        productId
+      ]
     );
     
     res.json({ message: 'Product updated successfully' });
   } catch (error) {
     console.error('Product update error:', error);
-    res.status(500).json({ message: 'Server error updating product' });
+    res.status(500).json({ 
+      message: 'Server error updating product',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
   }
 });
 
@@ -868,53 +1183,242 @@ app.get('/api/admin/orders', authenticateToken, isAdmin, async (req, res) => {
     res.status(500).json({ message: 'Server error fetching orders' });
   }
 });
-
-// Admin: Update order status
-app.put('/api/admin/orders/:orderId/status', authenticateToken, isAdmin, async (req, res) => {
+app.get('/api/admin/delivery-personnel', authenticateToken, isAdmin, async (req, res) => {
   try {
-    const { orderId } = req.params;
-    const { status, personnelId } = req.body;
-    const client = await pool.connect();
+    const available = req.query.available === 'true';
+    let query = 'SELECT * FROM delivery_personnel';
+    const params = [];
     
-    try {
-      await client.query('BEGIN');
-      
-      // Update order status
-      await client.query(
-        'UPDATE orders SET status = $1 WHERE order_id = $2',
-        [status, orderId]
-      );
-      
-      // Add tracking entry
-      await client.query(
-        'INSERT INTO order_tracking (order_id, personnel_id, status, location) VALUES ($1, $2, $3, $4)',
-        [orderId, personnelId, status, status === 'out_for_delivery' ? 'En route to customer' : 'Warehouse']
-      );
-      
-      // If delivered, set actual delivery time
-      if (status === 'delivered') {
-        await client.query(
-          'UPDATE orders SET actual_delivery_time = NOW() WHERE order_id = $1',
-          [orderId]
-        );
-      }
-      
-      await client.query('COMMIT');
-      
-      res.json({ message: 'Order status updated successfully' });
-    } catch (error) {
-      await client.query('ROLLBACK');
-      throw error;
-    } finally {
-      client.release();
+    if (available) {
+      query += ' WHERE is_available = $1';
+      params.push(true);
     }
+    
+    query += ' ORDER BY created_at DESC';
+    
+    const personnel = await pool.query(query, params);
+    res.json(personnel.rows);
   } catch (error) {
-    console.error('Order status update error:', error);
-    res.status(500).json({ message: 'Server error updating order status' });
+    console.error('Delivery personnel fetch error:', error);
+    res.status(500).json({ message: 'Server error fetching personnel' });
   }
 });
-// Add these new routes to your existing app.js
 
+
+app.post('/api/admin/delivery-personnel', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { name, phone, email, password } = req.body;
+    const hashedPassword = await bcrypt.hash(password, 10);
+    
+    const result = await pool.query(
+      `INSERT INTO delivery_personnel 
+       (name, phone, email, password) 
+       VALUES ($1, $2, $3, $4) RETURNING *`,
+      [name, phone, email, hashedPassword]
+    );
+    
+    res.status(201).json(result.rows[0]);
+  } catch (error) {
+    console.error('Personnel creation error:', error);
+    res.status(500).json({ message: 'Server error creating personnel' });
+  }
+});
+
+app.delete('/api/admin/delivery-personnel/:id', authenticateToken, isAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { id } = req.params;
+
+    // Check personnel availability status
+    const personnelCheck = await client.query(
+      'SELECT is_available FROM delivery_personnel WHERE personnel_id = $1',
+      [id]
+    );
+
+    if (personnelCheck.rows.length === 0) {
+      await client.query('ROLLBACK');
+      return res.status(404).json({ message: 'Personnel not found' });
+    }
+
+    if (!personnelCheck.rows[0].is_available) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ 
+        message: 'Cannot delete unavailable personnel. Ensure they have completed all deliveries first.' 
+      });
+    }
+
+    await client.query('DELETE FROM delivery_personnel WHERE personnel_id = $1', [id]);
+    await client.query('COMMIT');
+    res.json({ message: 'Personnel deleted successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Personnel deletion error:', error);
+    res.status(500).json({ 
+      message: 'Server error deleting personnel',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  } finally {
+    client.release();
+  }
+});
+
+app.put('/api/admin/users/:userId/admin', authenticateToken, isAdmin, async (req, res) => {
+  try {
+    const { userId } = req.params;
+    const { isAdmin } = req.body;
+
+    if (!isAdmin) {
+      return res.status(400).json({ message: 'Demoting admins is not allowed' });
+    }
+
+    const result = await pool.query(
+      'UPDATE users SET is_admin = TRUE WHERE user_id = $1 AND is_admin = FALSE RETURNING *',
+      [userId]
+    );
+
+    if (result.rowCount === 0) {
+      return res.status(400).json({ message: 'User is already admin or not found' });
+    }
+
+    res.json({ message: 'User promoted to admin successfully' });
+  } catch (error) {
+    console.error('Error updating admin status:', error);
+    res.status(500).json({ 
+      message: 'Server error updating admin status',
+      error: process.env.NODE_ENV === 'development' ? error.message : undefined
+    });
+  }
+});
+
+// Admin: Update order status
+// app.put('/api/admin/orders/:orderId/status', authenticateToken, isAdmin, async (req, res) => {
+//   try {
+//     const { orderId } = req.params;
+//     const { status, personnelId } = req.body;
+//     const client = await pool.connect();
+    
+//     try {
+//       await client.query('BEGIN');
+      
+//       // Update order status
+//       await client.query(
+//         'UPDATE orders SET status = $1 WHERE order_id = $2',
+//         [status, orderId]
+//       );
+      
+//       // Add tracking entry
+//       await client.query(
+//         'INSERT INTO order_tracking (order_id, personnel_id, status, location) VALUES ($1, $2, $3, $4)',
+//         [orderId, personnelId, status, status === 'out_for_delivery' ? 'En route to customer' : 'Warehouse']
+//       );
+      
+//       // If delivered, set actual delivery time
+//       if (status === 'delivered') {
+//         await client.query(
+//           'UPDATE orders SET actual_delivery_time = NOW() WHERE order_id = $1',
+//           [orderId]
+//         );
+//       }
+      
+//       await client.query('COMMIT');
+      
+//       res.json({ message: 'Order status updated successfully' });
+//     } catch (error) {
+//       await client.query('ROLLBACK');
+//       throw error;
+//     } finally {
+//       client.release();
+//     }
+//   } catch (error) {
+//     console.error('Order status update error:', error);
+//     res.status(500).json({ message: 'Server error updating order status' });
+//   }
+// });
+// Add these new routes to your existing app.js
+app.put('/api/admin/orders/:orderId/status', authenticateToken, isAdmin, async (req, res) => {
+  const client = await pool.connect();
+  try {
+    await client.query('BEGIN');
+    const { orderId } = req.params;
+    const { status, personnelId } = req.body;
+
+    // Validate personnel for out_for_delivery status
+    if (status === 'out_for_delivery') {
+      if (!personnelId) {
+        throw new Error('Personnel ID required for out for delivery status');
+      }
+      
+      // Check personnel availability
+      const personnelCheck = await client.query(
+        'SELECT is_available FROM delivery_personnel WHERE personnel_id = $1',
+        [personnelId]
+      );
+      
+      if (personnelCheck.rows.length === 0) {
+        throw new Error('Invalid personnel ID');
+      }
+      
+      if (!personnelCheck.rows[0].is_available) {
+        throw new Error('Selected personnel is not available');
+      }
+    }
+
+    // Update order status
+    await client.query(
+      'UPDATE orders SET status = $1 WHERE order_id = $2',
+      [status, orderId]
+    );
+
+    // Handle personnel availability
+    if (status === 'out_for_delivery') {
+      // Mark personnel as unavailable
+      await client.query(
+        'UPDATE delivery_personnel SET is_available = false WHERE personnel_id = $1',
+        [personnelId]
+      );
+      
+      // Add tracking entry with personnel
+      await client.query(
+        `INSERT INTO order_tracking 
+        (order_id, personnel_id, status, location) 
+        VALUES ($1, $2, $3, $4)`,
+        [orderId, personnelId, status, 'En route to customer']
+      );
+    } 
+    else if (status === 'delivered') {
+      // Mark personnel as available again
+      const tracking = await client.query(
+        'SELECT personnel_id FROM order_tracking WHERE order_id = $1 ORDER BY timestamp DESC LIMIT 1',
+        [orderId]
+      );
+      
+      if (tracking.rows[0]?.personnel_id) {
+        await client.query(
+          'UPDATE delivery_personnel SET is_available = true WHERE personnel_id = $1',
+          [tracking.rows[0].personnel_id]
+        );
+      }
+
+      // Update delivery time
+      await client.query(
+        'UPDATE orders SET actual_delivery_time = NOW() WHERE order_id = $1',
+        [orderId]
+      );
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Order status updated successfully' });
+  } catch (error) {
+    await client.query('ROLLBACK');
+    console.error('Order status update error:', error);
+    res.status(500).json({ 
+      message: error.message || 'Server error updating order status'
+    });
+  } finally {
+    client.release();
+  }
+});
 // Get store location
 app.get('/api/store-location', async (req, res) => {
   try {

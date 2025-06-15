@@ -151,8 +151,8 @@ CREATE TABLE IF NOT EXISTS store_locations (
 
 -- Create indexes for faster queries (with IF NOT EXISTS)
 -- Add latitude and longitude to addresses table
-ALTER TABLE addresses ADD COLUMN latitude DECIMAL(10, 8);
-ALTER TABLE addresses ADD COLUMN longitude DECIMAL(11, 8);
+-- ALTER TABLE addresses ADD COLUMN latitude DECIMAL(10, 8);
+-- ALTER TABLE addresses ADD COLUMN longitude DECIMAL(11, 8);
 
 ALTER TABLE delivery_locations ALTER COLUMN personnel_id DROP NOT NULL;
 
@@ -166,6 +166,28 @@ CREATE TABLE stores (
   created_at TIMESTAMP DEFAULT NOW()
 );
 
+-- Add to your existing DDL.sql
+CREATE TABLE IF NOT EXISTS reviews (
+    review_id SERIAL PRIMARY KEY,
+    product_id INT NOT NULL,
+    user_id INT NOT NULL,
+    rating INT NOT NULL CHECK (rating BETWEEN 1 AND 5),
+    comment TEXT,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (product_id) REFERENCES products(product_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE
+);
+
+CREATE TABLE IF NOT EXISTS review_helpful (
+    helpful_id SERIAL PRIMARY KEY,
+    review_id INT NOT NULL,
+    user_id INT NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    FOREIGN KEY (review_id) REFERENCES reviews(review_id) ON DELETE CASCADE,
+    FOREIGN KEY (user_id) REFERENCES users(user_id) ON DELETE CASCADE,
+    UNIQUE(review_id, user_id)
+);
 -- Insert default store in Bangalore
 INSERT INTO stores (name, address, latitude, longitude) VALUES (
   'Main Store',

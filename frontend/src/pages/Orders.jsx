@@ -39,7 +39,8 @@ const Orders = () => {
 
   // Helper function to safely format price
   const formatPrice = (price) => {
-    return typeof price === 'number' ? price.toFixed(2) : '0.00';
+    const numericPrice = parseFloat(price);
+    return !isNaN(numericPrice) ? numericPrice.toFixed(2) : '0.00';
   };
 
   if (loading) {

@@ -6,12 +6,14 @@ import Footer from "./components/Footer";
 import ProductDetails from "./pages/ProductDetails";
 // import AddressForm from "./components/AddressForm";
 // import ProductCard from "./components/ProductCard";
+
 import Home from "./pages/Home";
 import Signup from "./pages/Signup";
 import Login from "./pages/Login";
 import Dashboard from "./pages/Dashboard";
 import Products from "./pages/Products";
 import Cart from "./pages/Cart";
+import ComparisonPage from "./pages/ComparisonPage";
 import OrderConfirmation from "./pages/OrderConfirmation";
 import NotFound from "./pages/Notfound";
 import DeliveryTracking from "./pages/DeliveryTracking";
@@ -19,6 +21,7 @@ import AdminPanel from "./pages/AdminPanel";
 import Profile from "./pages/Profile";
 import Orders from "./pages/Orders";
 import "./css/App.css";
+
 
 export const apiUrl = process.env.REACT_APP_API_URL || "http://localhost:5000/api";
 
@@ -96,6 +99,13 @@ function App() {
           <Route path="/products/:productId" element={<ProductDetails />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="*" element={<NotFound />} />
+          <Route path="/products" element={<Products />} />
+  
+          {/* Add this line for comparison */}
+          <Route path="/compare" element={<ComparisonPage />} />
+  
+          <Route path="/cart" element={<Cart />} />
+          {/* ... other routes ... */}
         </Routes>
       </main>
       <Footer />

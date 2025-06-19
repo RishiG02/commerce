@@ -1,4 +1,4 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { Link } from "react-router-dom";
 import { apiUrl } from "../config/config";
 import RatingStars from "./RatingStars";
@@ -568,6 +568,34 @@ const ProductCard = ({ product }) => {
     250: gasket
   };
 
+  const [isSelectedForCompare, setIsSelectedForCompare] = useState(false);
+  
+  // Initialize compare selection from localStorage
+  useEffect(() => {
+    const currentSelections = JSON.parse(localStorage.getItem('compareProducts') || '[]');
+    setIsSelectedForCompare(currentSelections.includes(product.product_id));
+  }, [product.product_id]);
+
+  const toggleCompare = () => {
+    const currentSelections = JSON.parse(localStorage.getItem('compareProducts') || '[]');
+    let updatedSelections;
+
+    if (isSelectedForCompare) {
+      // Remove from selection
+      updatedSelections = currentSelections.filter(id => id !== product.product_id);
+    } else {
+      // Add to selection (limit to 2)
+      if (currentSelections.length >= 2) {
+        alert('You can compare maximum 2 products at a time');
+        return;
+      }
+      updatedSelections = [...currentSelections, product.product_id];
+    }
+
+    localStorage.setItem('compareProducts', JSON.stringify(updatedSelections));
+    setIsSelectedForCompare(!isSelectedForCompare);
+  };
+
   const addToCart = async () => {
     try {
       const response = await fetch(`${apiUrl}/cart/items`, {
@@ -636,17 +664,27 @@ const ProductCard = ({ product }) => {
             <span className="product-unit">/ {product.unit}</span>
           </div>
           
-          <button 
-            className="add-to-cart"
-            onClick={addToCart}
-            aria-label={`Add ${product.name} to cart`}
-          >
-            Add to Cart
-          </button>
+          <div className="product-actions">
+            <button 
+              className="add-to-cart"
+              onClick={addToCart}
+              aria-label={`Add ${product.name} to cart`}
+            >
+              Add to Cart
+            </button>
+            <button 
+              className={`compare-btn ${isSelectedForCompare ? 'selected' : ''}`}
+              onClick={toggleCompare}
+              aria-label={`${isSelectedForCompare ? 'Remove from' : 'Add to'} comparison`}
+            >
+              {isSelectedForCompare ? '✓ Comparing' : 'Compare'}
+            </button>
+          </div>
         </div>
       </div>
     </div>
   );
+  // Floating button for comparison
 };
 
 export default ProductCard;

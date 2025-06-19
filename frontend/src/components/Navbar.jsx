@@ -1,10 +1,32 @@
-import React from "react";
-import { Link } from "react-router-dom";
+import React, { useState, useEffect } from "react";
+import { Link, useNavigate } from "react-router-dom";
 import { useTheme } from "../contexts/ThemeContext";
 import "../css/Navbar.css";
 
 const Navbar = ({ isLoggedIn, user, handleLogout }) => {
   const { darkMode, toggleDarkMode } = useTheme();
+  const [selectedProducts, setSelectedProducts] = useState([]);
+  const navigate = useNavigate();
+
+  // Watch for changes in localStorage for compareProducts
+  useEffect(() => {
+    const handleStorageChange = () => {
+      const products = JSON.parse(localStorage.getItem('compareProducts') || '[]');
+      setSelectedProducts(products);
+    };
+
+    handleStorageChange(); // Initial load
+
+    window.addEventListener('storage', handleStorageChange);
+    return () => {
+      window.removeEventListener('storage', handleStorageChange);
+    };
+  }, []);
+
+  const goToComparison = () => {
+    navigate(`/compare?ids=${selectedProducts.join(',')}`);
+  };
+
   return (
     <nav className={`navbar ${darkMode ? 'dark' : 'light'}`}>
       <div className="navbar-container">
@@ -18,7 +40,7 @@ const Navbar = ({ isLoggedIn, user, handleLogout }) => {
         </div> */}
 
         <div className="navbar-links">
-        <button onClick={toggleDarkMode} className="theme-toggle">
+          <button onClick={toggleDarkMode} className="theme-toggle">
             {darkMode ? '☀️ Light' : '🌙 Dark'}
           </button>
           {isLoggedIn ? (
@@ -34,6 +56,17 @@ const Navbar = ({ isLoggedIn, user, handleLogout }) => {
                   Cart
                 </Link>
               </div>
+              {/* --- Compare Button Start --- */}
+              {selectedProducts.length > 0 && (
+                <button
+                  onClick={goToComparison}
+                  className="compare-nav-button"
+                  style={{ marginLeft: "10px" }}
+                >
+                  Compare ({selectedProducts.length}/2)
+                </button>
+              )}
+              {/* --- Compare Button End --- */}
               <div className="user-menu">
                 <button className="user-button">
                   {user?.name || "Account"}

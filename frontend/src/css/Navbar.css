@@ -6,7 +6,22 @@
   z-index: 1000;
   transition: background-color 0.3s;
 }
-  
+  /* Add to your existing navbar styles */
+.compare-nav-button {
+  background-color: #4CAF50;
+  color: white;
+  border: none;
+  padding: 8px 16px;
+  border-radius: 4px;
+  margin-left: 10px;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+.compare-nav-button:hover {
+  background-color: #45a049;
+}
+/*end of compare*/
   .navbar-container {
     max-width: 1200px;
     margin: 0 auto;

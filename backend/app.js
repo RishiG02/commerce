@@ -510,6 +510,65 @@ app.post('/api/products/:productId/reviews', authenticateToken, async (req, res)
   }
 });
 
+// Comparion of products
+app.get('/api/products/compare', async (req, res) => {
+  try {
+    const productIds = req.query.ids.split(',').map(id => parseInt(id.trim()));
+    
+    if (productIds.length !== 2) {
+      return res.status(400).json({ message: 'Please select exactly 2 products to compare' });
+    }
+
+    const products = await pool.query(`
+      SELECT p.*, 
+        COALESCE(ROUND(AVG(r.rating), 1), 0) as average_rating,
+        COUNT(r.review_id) as review_count
+      FROM products p
+      LEFT JOIN reviews r ON p.product_id = r.product_id
+      WHERE p.product_id = ANY($1)
+      GROUP BY p.product_id
+    `, [productIds]);
+
+    if (products.rows.length !== 2) {
+      return res.status(404).json({ message: 'One or more products not found' });
+    }
+
+    // Structure the data for comparison
+    const comparisonData = {
+      products: products.rows,
+      commonAttributes: getCommonAttributes(products.rows[0], products.rows[1])
+    };
+
+    res.json(comparisonData);
+  } catch (error) {
+    console.error('Comparison error:', error);
+    res.status(500).json({ message: 'Server error during comparison' });
+  }
+});
+
+// Helper function (add with other utility functions)
+function getCommonAttributes(product1, product2) {
+  const attributes = [];
+  const keys = new Set([...Object.keys(product1), ...Object.keys(product2)]);
+  
+  // Exclude fields that shouldn't be compared
+  const excludedFields = new Set([
+    'product_id', 'image_url', 'created_at', 
+    'updated_at', 'average_rating', 'review_count'
+  ]);
+
+  for (const key of keys) {
+    if (!excludedFields.has(key) && product1[key] !== undefined && product2[key] !== undefined) {
+      attributes.push({
+        name: key.replace(/_/g, ' '), // Convert snake_case to readable
+        values: [product1[key], product2[key]]
+      });
+    }
+  }
+
+  return attributes;
+}
+
 // Get product reviews
 app.get('/api/products/:productId/reviews', async (req, res) => {
   try {
@@ -627,6 +686,7 @@ app.get('/api/products/category/:categoryId', async (req, res) => {
       res.status(500).json({ message: 'Server error fetching products' });
   }
 });
+
 
 app.get('/api/products/:productId', async (req, res) => {
   try {
@@ -1599,6 +1659,8 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`Server running on port ${PORT}`);
 });
+
+
 
 module.exports = app;
 

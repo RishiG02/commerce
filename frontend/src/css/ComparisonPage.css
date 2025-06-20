@@ -1,0 +1,88 @@
+.comparison-container {
+  max-width: 1200px;
+  margin: 2rem auto;
+  padding: 1rem;
+}
+
+.comparison-grid {
+  display: grid;
+  grid-template-columns: 200px 1fr 1fr;
+  border: 1px solid #e1e1e1;
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+.comparison-row {
+  display: contents;
+}
+
+.comparison-row > div {
+  padding: 1rem;
+  border-bottom: 1px solid #e1e1e1;
+  display: flex;
+  align-items: center;
+}
+
+.comparison-row.header > div {
+  background-color: #f8f9fa;
+  font-weight: bold;
+  justify-content: center;
+  text-align: center;
+}
+
+.attribute-name {
+  font-weight: 600;
+  background-color: #f8f9fa;
+}
+
+.product-info {
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.product-image {
+  max-width: 150px;
+  max-height: 150px;
+  object-fit: contain;
+  margin: 0 auto;
+}
+
+.product-price {
+  font-size: 1.1rem;
+}
+
+.original-price {
+  text-decoration: line-through;
+  color: #6c757d;
+  margin-right: 0.5rem;
+}
+
+.discounted-price {
+  color: #dc3545;
+  font-weight: bold;
+}
+
+.back-button {
+  background: none;
+  border: none;
+  color: #0d6efd;
+  cursor: pointer;
+  margin-bottom: 1rem;
+  padding: 0.5rem;
+}
+
+.back-button:hover {
+  text-decoration: underline;
+}
+
+.comparison-loading,
+.comparison-error,
+.comparison-empty {
+  text-align: center;
+  margin: 2rem;
+  font-size: 1.2rem;
+}
+
+.comparison-error {
+  color: #dc3545;
+}

@@ -21,7 +21,7 @@ const ComparisonPage = () => {
           throw new Error('No products selected for comparison');
         }
 
-        const response = await axios.get(`${apiUrl}/api/products/compare?ids=${productIds}`);
+        const response = await axios.get(`${apiUrl}/products/compare?ids=${productIds}`);
         setComparisonData(response.data);
         setLoading(false);
       } catch (err) {
